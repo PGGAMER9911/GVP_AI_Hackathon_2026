@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timetable — AttendTrack</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="app-container">
+        <aside class="sidebar"></aside>
+
+        <main class="main-content">
+            <div class="page-header">
+                <h1>Timetable</h1>
+                <p>Weekly lecture schedule per course and semester — attendance is linked to these slots</p>
+            </div>
+
+            <!-- Filter -->
+            <div class="card">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1; min-width:180px;">
+                        <label for="ttCourse">Course</label>
+                        <select id="ttCourse" onchange="onTTCourseChange()">
+                            <option value="">-- Select Course --</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:0.6; min-width:130px;">
+                        <label for="ttSem">Semester</label>
+                        <select id="ttSem" disabled onchange="renderTimetable()">
+                            <option value="">—</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timetable Grid -->
+            <div class="card">
+                <div class="card-header">Weekly Schedule</div>
+                <div id="timetableContainer">
+                    <p class="empty-state">Select a course and semester to view the weekly timetable</p>
+                </div>
+            </div>
+
+            <!-- Subjects in Curriculum -->
+            <div class="card">
+                <div class="card-header">Subjects in Curriculum</div>
+                <div id="subjectsList">
+                    <p class="empty-state">Select a course and semester to view subjects</p>
+                </div>
+            </div>
+
+            <!-- Course Info -->
+            <div class="card">
+                <div class="card-header">Course Details</div>
+                <div id="courseInfo">
+                    <p class="empty-state">Select a course to view details</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/main.js"></script>
+    <script>
+        Auth.guard();
+        renderSidebar('timetable');
+
+        /* Populate course dropdown */
+        function initTTPage() {
+            var sel = document.getElementById('ttCourse');
+            sel.innerHTML = '<option value="">-- Select Course --</option>';
+            for (var code in COURSES) {
+                sel.innerHTML += '<option value="' + code + '">' + COURSES[code].name + ' (' + code + ')</option>';
+            }
+        }
+
+        /* Update semester dropdown and show course details */
+        function onTTCourseChange() {
+            var course = document.getElementById('ttCourse').value;
+            var semSel = document.getElementById('ttSem');
+
+            if (!course) {
+                semSel.innerHTML = '<option value="">—</option>';
+                semSel.disabled = true;
+                document.getElementById('timetableContainer').innerHTML = '<p class="empty-state">Select a course and semester</p>';
+                document.getElementById('subjectsList').innerHTML = '<p class="empty-state">Select a course and semester</p>';
+                document.getElementById('courseInfo').innerHTML = '<p class="empty-state">Select a course</p>';
+                return;
+            }
+
+            var opts = getSemesterOptions(course);
+            semSel.innerHTML = opts.map(function(o) {
+                return '<option value="' + o.value + '">' + o.label + '</option>';
+            }).join('');
+            semSel.disabled = false;
+
+            /* Show course details */
+            var c = COURSES[course];
+            document.getElementById('courseInfo').innerHTML = '<div class="report-grid">'
+                + '<div class="report-item"><div class="report-label">Programme</div><div class="report-value">' + c.name + '</div></div>'
+                + '<div class="report-item"><div class="report-label">Type</div><div class="report-value">' + c.type + '</div></div>'
+                + '<div class="report-item"><div class="report-label">Duration</div><div class="report-value">' + (c.duration > 0 ? c.duration + ' Years' : 'As per rules') + '</div></div>'
+                + '<div class="report-item"><div class="report-label">Semesters</div><div class="report-value">' + (c.semesters > 0 ? c.semesters : 'Year-based') + '</div></div>'
+                + '<div class="report-item"><div class="report-label">Intake</div><div class="report-value">' + (c.intake > 0 ? c.intake : 'Variable') + '</div></div>'
+                + '<div class="report-item"><div class="report-label">Total Credits</div><div class="report-value">' + (c.credits > 0 ? c.credits : 'N/A') + '</div></div>'
+                + '</div>';
+
+            renderTimetable();
+        }
+
+        /* Render weekly timetable grid */
+        function renderTimetable() {
+            var course = document.getElementById('ttCourse').value;
+            var semester = parseInt(document.getElementById('ttSem').value);
+            if (!course || !semester) return;
+
+            var tt = generateTimetable(course, semester);
+            var subjects = getSubjects(course, semester);
+
+            if (Object.keys(tt).length === 0) {
+                document.getElementById('timetableContainer').innerHTML =
+                    '<p class="empty-state">No timetable data for this combination</p>';
+                return;
+            }
+
+            /* Build timetable table: rows = time slots, columns = days */
+            var html = '<table class="timetable-table"><thead><tr><th>Time Slot</th>';
+            DAYS.forEach(function(d) { html += '<th>' + d + '</th>'; });
+            html += '</tr></thead><tbody>';
+
+            TIME_SLOTS.forEach(function(ts) {
+                html += '<tr>';
+                html += '<td><div class="tt-time">' + ts.time + '</div><div class="tt-type">Slot ' + ts.slot + '</div></td>';
+
+                DAYS.forEach(function(day) {
+                    var entry = (tt[day] || []).find(function(e) { return e.slot === ts.slot; });
+                    if (entry) {
+                        html += '<td>'
+                            + '<div class="tt-subject">' + entry.subject + '</div>'
+                            + '<div class="tt-type">' + entry.type + '</div>'
+                            + '</td>';
+                    } else {
+                        html += '<td>—</td>';
+                    }
+                });
+
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('timetableContainer').innerHTML = html;
+
+            /* Subjects list */
+            document.getElementById('subjectsList').innerHTML =
+                '<table><thead><tr><th>#</th><th>Subject Name</th><th>Weekly Lectures</th></tr></thead><tbody>'
+                + subjects.map(function(s, i) {
+                    /* Count how many times this subject appears in the timetable */
+                    var count = 0;
+                    DAYS.forEach(function(day) {
+                        (tt[day] || []).forEach(function(entry) {
+                            if (entry.subject === s) count++;
+                        });
+                    });
+                    return '<tr><td>' + (i + 1) + '</td><td>' + s + '</td><td>' + count + '</td></tr>';
+                }).join('')
+                + '</tbody></table>';
+        }
+
+        function onDataReady() { initTTPage(); }
+        initTTPage();
+    </script>
+
+</body>
+</html>

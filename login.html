@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — AttendTrack</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="login-container">
+        <div class="login-box">
+            <h1>AttendTrack</h1>
+            <p class="subtitle">AI-Assisted Academic Management System</p>
+
+            <div id="loginError" class="login-error"></div>
+
+            <form onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="Enter username" autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter password">
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+
+            <p class="login-hint">Demo: admin / admin123 &nbsp;|&nbsp; teacher / pass123</p>
+        </div>
+    </div>
+
+    <script src="js/main.js"></script>
+    <script>
+        /* Redirect if already logged in */
+        if (Auth.getSession()) window.location.href = 'dashboard.html';
+
+        function handleLogin(e) {
+            e.preventDefault();
+            var user = document.getElementById('username').value;
+            var pass = document.getElementById('password').value;
+            var result = Auth.login(user, pass);
+
+            if (result.success) {
+                window.location.href = 'dashboard.html';
+            } else {
+                var err = document.getElementById('loginError');
+                err.textContent = result.message;
+                err.style.display = 'block';
+            }
+        }
+    </script>
+
+</body>
+</html>

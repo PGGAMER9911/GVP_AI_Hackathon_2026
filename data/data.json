@@ -1,0 +1,13 @@
+{
+    "students": [
+        { "id": "STU001", "roll": "BCA101", "name": "Rahul Sharma", "course": "BCA", "semester": 1, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU002", "roll": "BCA102", "name": "Priya Patel", "course": "BCA", "semester": 1, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU003", "roll": "BCA301", "name": "Amit Kumar", "course": "BCA", "semester": 3, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU004", "roll": "BCA302", "name": "Sneha Gupta", "course": "BCA", "semester": 3, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU005", "roll": "MCA101", "name": "Vikram Singh", "course": "MCA", "semester": 1, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU006", "roll": "MCA102", "name": "Neha Verma", "course": "MCA", "semester": 1, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU007", "roll": "MSCIT101", "name": "Rohan Joshi", "course": "MSC_IT", "semester": 1, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU008", "roll": "PGDCA101", "name": "Kavita Rao", "course": "PGDCA", "semester": 1, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" },
+        { "id": "STU009", "roll": "PHD101", "name": "Dr. Aditi Shah", "course": "PHD", "semester": 1, "academicYear": "2025-26", "marks": {}, "remark": "", "createdAt": "2026-01-15T10:00:00.000Z" }
+    ]
+}

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance — AttendTrack</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="app-container">
+        <aside class="sidebar"></aside>
+
+        <main class="main-content">
+            <div class="page-header">
+                <h1>Attendance Management</h1>
+                <p>Course-wise, semester-wise, subject-wise, date-wise, lecture-wise attendance</p>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="card">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1; min-width:180px;">
+                        <label for="attCourse">Course</label>
+                        <select id="attCourse" onchange="onCourseChange()">
+                            <option value="">-- Select Course --</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:0.6; min-width:130px;">
+                        <label for="attSem">Semester</label>
+                        <select id="attSem" disabled>
+                            <option value="">—</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:0.5; min-width:150px;">
+                        <label for="attDate">Date</label>
+                        <input type="date" id="attDate">
+                    </div>
+                    <button class="btn btn-primary" onclick="loadDaySchedule()">Load Schedule</button>
+                </div>
+            </div>
+
+            <!-- Day Schedule — shows timetable slots for selected day -->
+            <div class="card" id="scheduleCard" style="display:none;">
+                <div class="card-header"><span id="dayTitle">Schedule</span></div>
+                <p style="font-size:12px; color:#64748b; margin-bottom:10px;">Click a slot below to mark attendance for that lecture</p>
+                <div id="slotList"></div>
+                <p id="noSlots" class="empty-state" style="display:none;">No lectures scheduled for this day (weekend or no timetable)</p>
+            </div>
+
+            <!-- Attendance Marking Panel -->
+            <div class="card" id="markingCard" style="display:none;">
+                <div class="card-header">
+                    Mark Attendance — <span id="slotInfo"></span>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Roll</th>
+                            <th>Name</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="attendanceBody"></tbody>
+                </table>
+                <p id="noStudentsAtt" class="empty-state" style="display:none;">No students enrolled in this course/semester. Add students first.</p>
+                <div class="form-row" style="margin-top:14px;">
+                    <button class="btn btn-success" onclick="saveSlotAttendance()">Save Attendance</button>
+                    <button class="btn btn-warning" onclick="markAllPresent()">All Present</button>
+                </div>
+            </div>
+
+            <!-- Attendance Summary -->
+            <div class="card">
+                <div class="card-header">
+                    Attendance Summary
+                    <span class="ai-label">AI-Based Warning</span>
+                </div>
+                <p class="ai-note">Students below 80% in any subject are flagged with "Shortage" status. The system auto-calculates the extra classes needed to recover to 80%.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Roll</th>
+                            <th>Name</th>
+                            <th>Subject</th>
+                            <th>Present</th>
+                            <th>Total</th>
+                            <th>%</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryBody"></tbody>
+                </table>
+                <p id="noSummary" class="empty-state" style="display:none;">Select a course and semester, then load schedule to view summary</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/main.js"></script>
+    <script>
+        Auth.guard();
+        renderSidebar('attendance');
+
+        var currentSlot = null;
+        var currentRecords = {};
+
+        /* Populate course dropdown */
+        function initPage() {
+            var sel = document.getElementById('attCourse');
+            sel.innerHTML = '<option value="">-- Select Course --</option>';
+            for (var code in COURSES) {
+                sel.innerHTML += '<option value="' + code + '">' + COURSES[code].name + ' (' + code + ')</option>';
+            }
+            document.getElementById('attDate').value = Utils.getTodayString();
+        }
+
+        /* Update semester dropdown on course change */
+        function onCourseChange() {
+            var course = document.getElementById('attCourse').value;
+            var semSel = document.getElementById('attSem');
+
+            if (!course) {
+                semSel.innerHTML = '<option value="">—</option>';
+                semSel.disabled = true;
+                return;
+            }
+
+            var opts = getSemesterOptions(course);
+            semSel.innerHTML = opts.map(function(o) {
+                return '<option value="' + o.value + '">' + o.label + '</option>';
+            }).join('');
+            semSel.disabled = false;
+        }
+
+        /* Load the day's timetable slots */
+        function loadDaySchedule() {
+            var course = document.getElementById('attCourse').value;
+            var semester = document.getElementById('attSem').value;
+            var date = document.getElementById('attDate').value;
+
+            if (!course || !semester || !date) {
+                Utils.showToast('Please fill all fields', 'warning');
+                return;
+            }
+
+            var dayName = getDayName(date);
+            if (dayName === 'Sunday' || dayName === 'Saturday') {
+                Utils.showToast('No lectures on ' + dayName, 'warning');
+                return;
+            }
+
+            var tt = generateTimetable(course, parseInt(semester));
+            var slots = tt[dayName] || [];
+
+            document.getElementById('dayTitle').textContent = dayName + ', ' + date;
+            var slotList = document.getElementById('slotList');
+            var noSlots = document.getElementById('noSlots');
+
+            if (slots.length === 0) {
+                slotList.innerHTML = '';
+                noSlots.style.display = 'block';
+            } else {
+                noSlots.style.display = 'none';
+                slotList.innerHTML = slots.map(function(s) {
+                    var marked = Store.isSlotMarked(course, semester, date, s.slot);
+                    return '<div class="slot-row ' + (marked ? 'slot-marked' : '') + '" onclick="selectSlot(' + s.slot + ')">'
+                        + '<span class="slot-time">Slot ' + s.slot + ' &nbsp;&bull;&nbsp; ' + s.time + '</span>'
+                        + '<span class="slot-subject">' + s.subject + '</span>'
+                        + '<span class="badge ' + (s.type === 'Lab' ? 'badge-warning' : 'badge-info') + '">' + s.type + '</span>'
+                        + (marked ? ' <span class="badge badge-success">Saved</span>' : '')
+                        + '</div>';
+                }).join('');
+            }
+
+            document.getElementById('scheduleCard').style.display = 'block';
+            document.getElementById('markingCard').style.display = 'none';
+            loadSummary();
+        }
+
+        /* Select a slot to mark attendance */
+        function selectSlot(slotNum) {
+            var course = document.getElementById('attCourse').value;
+            var semester = parseInt(document.getElementById('attSem').value);
+            var date = document.getElementById('attDate').value;
+
+            var tt = generateTimetable(course, semester);
+            var dayName = getDayName(date);
+            var slot = (tt[dayName] || []).find(function(s) { return s.slot === slotNum; });
+            if (!slot) return;
+
+            currentSlot = { slot: slotNum, subject: slot.subject, time: slot.time };
+            document.getElementById('slotInfo').textContent =
+                'Slot ' + slotNum + ' | ' + slot.time + ' | ' + slot.subject;
+
+            /* Get students for this course+semester */
+            var students = Store.getStudentsByCourse(course, semester);
+
+            /* Load existing attendance if already marked */
+            var existing = Store.getSlotAttendance(course, semester, date, slotNum);
+            currentRecords = {};
+            students.forEach(function(s) {
+                currentRecords[s.id] = (existing && existing.records && existing.records[s.id]) || 'P';
+            });
+
+            renderStudentRows(students);
+            document.getElementById('markingCard').style.display = 'block';
+
+            /* Highlight active slot */
+            var slotRows = document.querySelectorAll('.slot-row');
+            slotRows.forEach(function(r) { r.classList.remove('slot-active'); });
+            if (slotRows[slotNum - 1]) slotRows[slotNum - 1].classList.add('slot-active');
+        }
+
+        /* Render P/A toggle buttons for each student */
+        function renderStudentRows(students) {
+            var tbody = document.getElementById('attendanceBody');
+            var noMsg = document.getElementById('noStudentsAtt');
+
+            if (students.length === 0) {
+                tbody.innerHTML = '';
+                noMsg.style.display = 'block';
+                return;
+            }
+            noMsg.style.display = 'none';
+
+            tbody.innerHTML = students.map(function(s) {
+                var status = currentRecords[s.id] || 'P';
+                return '<tr>'
+                    + '<td>' + Utils.sanitize(s.roll) + '</td>'
+                    + '<td>' + Utils.sanitize(s.name) + '</td>'
+                    + '<td>'
+                    + '<div class="attendance-toggle">'
+                    + '<button class="' + (status === 'P' ? 'present' : '') + '" onclick="setStatus(\'' + s.id + '\', \'P\')">P</button>'
+                    + '<button class="' + (status === 'A' ? 'absent' : '') + '" onclick="setStatus(\'' + s.id + '\', \'A\')">A</button>'
+                    + '</div>'
+                    + '</td>'
+                    + '</tr>';
+            }).join('');
+        }
+
+        /* Toggle student status */
+        function setStatus(studentId, status) {
+            currentRecords[studentId] = status;
+            var course = document.getElementById('attCourse').value;
+            var semester = parseInt(document.getElementById('attSem').value);
+            renderStudentRows(Store.getStudentsByCourse(course, semester));
+        }
+
+        /* Mark all present shortcut */
+        function markAllPresent() {
+            for (var id in currentRecords) currentRecords[id] = 'P';
+            var course = document.getElementById('attCourse').value;
+            var semester = parseInt(document.getElementById('attSem').value);
+            renderStudentRows(Store.getStudentsByCourse(course, semester));
+            Utils.showToast('All marked present', 'success');
+        }
+
+        /* Save attendance for the selected slot */
+        function saveSlotAttendance() {
+            if (!currentSlot) {
+                Utils.showToast('No slot selected', 'warning');
+                return;
+            }
+
+            var course = document.getElementById('attCourse').value;
+            var semester = document.getElementById('attSem').value;
+            var date = document.getElementById('attDate').value;
+
+            var result = Store.markSlotAttendance(
+                course, semester, date,
+                currentSlot.slot, currentSlot.subject, currentSlot.time,
+                currentRecords
+            );
+
+            if (result.success) {
+                Utils.showToast(result.message, 'success');
+                loadDaySchedule(); /* Refresh to show "Saved" badge */
+            } else {
+                Utils.showToast(result.message, 'danger');
+            }
+        }
+
+        /* Load attendance summary for selected course+semester */
+        function loadSummary() {
+            var course = document.getElementById('attCourse').value;
+            var semester = parseInt(document.getElementById('attSem').value);
+            if (!course || !semester) return;
+
+            var summary = Store.getCourseAttendanceSummary(course, semester);
+            var tbody = document.getElementById('summaryBody');
+            var noMsg = document.getElementById('noSummary');
+
+            var rows = [];
+            summary.forEach(function(item) {
+                var att = item.attendance;
+                if (!att || att.totalLectures === 0) return;
+
+                for (var sub in att.subjects) {
+                    var sa = att.subjects[sub];
+                    var badge = sa.percentage >= 80 ? 'badge-success' : 'badge-danger';
+                    var status = sa.percentage >= 80 ? 'Safe' : 'Shortage';
+                    rows.push('<tr>'
+                        + '<td>' + Utils.sanitize(item.student.roll) + '</td>'
+                        + '<td>' + Utils.sanitize(item.student.name) + '</td>'
+                        + '<td>' + Utils.sanitize(sub) + '</td>'
+                        + '<td>' + sa.attended + '</td>'
+                        + '<td>' + sa.total + '</td>'
+                        + '<td><span class="badge ' + badge + '">' + sa.percentage + '%</span></td>'
+                        + '<td>' + status + '</td>'
+                        + '</tr>');
+                }
+            });
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '';
+                noMsg.style.display = 'block';
+            } else {
+                noMsg.style.display = 'none';
+                tbody.innerHTML = rows.join('');
+            }
+        }
+
+        function onDataReady() { initPage(); }
+        initPage();
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — AttendTrack</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="app-container">
+        <aside class="sidebar"></aside>
+
+        <main class="main-content">
+            <div class="page-header">
+                <h1>Dashboard</h1>
+                <p>Academic overview across all courses and semesters</p>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="statCourses">5</div>
+                    <div class="stat-label">Courses Offered</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statStudents">0</div>
+                    <div class="stat-label">Total Students</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statAvgAtt">N/A</div>
+                    <div class="stat-label">Avg Attendance</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statDays">0</div>
+                    <div class="stat-label">Days Recorded</div>
+                </div>
+            </div>
+
+            <!-- Course Overview Cards -->
+            <div class="card">
+                <div class="card-header">Course Overview</div>
+                <div class="course-grid" id="courseGrid"></div>
+            </div>
+
+            <!-- Student Distribution -->
+            <div class="card">
+                <div class="card-header">Students Per Course &amp; Semester</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Course</th>
+                            <th>Semester</th>
+                            <th>Students</th>
+                            <th>Intake Capacity</th>
+                        </tr>
+                    </thead>
+                    <tbody id="distBody"></tbody>
+                </table>
+                <p id="noDist" class="empty-state" style="display:none;">No students enrolled yet</p>
+            </div>
+
+            <!-- Attendance Alerts -->
+            <div class="card">
+                <div class="card-header">
+                    Attendance Alerts
+                    <span class="ai-label">AI-Based Warning</span>
+                </div>
+                <p class="ai-note">Students below 80% overall attendance are auto-flagged. Recovery classes are calculated using: needed = ceil((0.80 &times; total - present) / 0.20).</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Roll</th>
+                            <th>Name</th>
+                            <th>Course</th>
+                            <th>Sem</th>
+                            <th>Attendance</th>
+                            <th>Status</th>
+                            <th>Recovery</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alertsBody"></tbody>
+                </table>
+                <p id="noAlerts" class="empty-state" style="display:none;">No attendance alerts — all students are above 80%</p>
+            </div>
+
+            <!-- Academic Overview -->
+            <div class="card">
+                <div class="card-header">
+                    Academic Overview
+                    <span class="ai-label">AI-Generated</span>
+                </div>
+                <p class="ai-note">Performance remarks use rule-based thresholds: &ge;90% Outstanding, &ge;75% Good, &ge;50% Average, &lt;50% Needs Improvement. Cross-metric analysis detects attendance vs marks mismatches.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Course</th>
+                            <th>Students</th>
+                            <th>Avg Marks</th>
+                            <th>Avg Attendance</th>
+                            <th>AI Remark</th>
+                        </tr>
+                    </thead>
+                    <tbody id="academicBody"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/main.js"></script>
+    <script>
+        Auth.guard();
+        renderSidebar('dashboard');
+
+        function loadDashboard() {
+            var students = Store.getStudents();
+            var allAtt = Store.getAttendance();
+
+            /* --- Stats --- */
+            document.getElementById('statCourses').textContent = Object.keys(COURSES).length;
+            document.getElementById('statStudents').textContent = students.length;
+
+            /* Count unique recorded days */
+            var allDays = {};
+            for (var csKey in allAtt) {
+                for (var date in allAtt[csKey]) {
+                    allDays[date] = true;
+                }
+            }
+            document.getElementById('statDays').textContent = Object.keys(allDays).length;
+
+            /* --- Course Overview Cards --- */
+            var courseGrid = document.getElementById('courseGrid');
+            courseGrid.innerHTML = '';
+            for (var code in COURSES) {
+                var c = COURSES[code];
+                var count = students.filter(function(s) { return s.course === code; }).length;
+                courseGrid.innerHTML += '<div class="course-card">'
+                    + '<div class="course-type">' + c.type + '</div>'
+                    + '<h3>' + c.name + '</h3>'
+                    + '<div class="course-count">' + count + ' students</div>'
+                    + '<div class="course-detail">'
+                    + 'Duration: ' + (c.duration > 0 ? c.duration + ' yrs' : 'Variable')
+                    + ' | Semesters: ' + (c.semesters > 0 ? c.semesters : 'Year-based')
+                    + '</div>'
+                    + '<div class="course-detail">'
+                    + 'Intake: ' + (c.intake > 0 ? c.intake : 'Variable')
+                    + ' | Credits: ' + (c.credits > 0 ? c.credits : 'N/A')
+                    + '</div>'
+                    + '</div>';
+            }
+
+            /* --- Student Distribution by course+semester --- */
+            var distBody = document.getElementById('distBody');
+            var distRows = [];
+            for (var code2 in COURSES) {
+                var semOpts = getSemesterOptions(code2);
+                semOpts.forEach(function(opt) {
+                    var cnt = students.filter(function(s) {
+                        return s.course === code2 && s.semester === opt.value;
+                    }).length;
+                    if (cnt > 0) {
+                        distRows.push('<tr>'
+                            + '<td>' + code2 + '</td>'
+                            + '<td>' + opt.label + '</td>'
+                            + '<td>' + cnt + '</td>'
+                            + '<td>' + (COURSES[code2].intake > 0 ? COURSES[code2].intake : 'Variable') + '</td>'
+                            + '</tr>');
+                    }
+                });
+            }
+            if (distRows.length === 0) {
+                distBody.innerHTML = '';
+                document.getElementById('noDist').style.display = 'block';
+            } else {
+                document.getElementById('noDist').style.display = 'none';
+                distBody.innerHTML = distRows.join('');
+            }
+
+            /* --- Attendance Alerts + Avg Attendance --- */
+            var totalAtt = 0, attCount = 0;
+            var alertRows = [];
+
+            students.forEach(function(s) {
+                var att = Store.getStudentAttendance(s.id);
+                if (att && att.totalLectures > 0) {
+                    totalAtt += att.percentage;
+                    attCount++;
+                    if (att.percentage < 80) {
+                        var needed = Utils.calcClassesNeeded(att.attended, att.totalLectures);
+                        alertRows.push('<tr>'
+                            + '<td>' + Utils.sanitize(s.roll) + '</td>'
+                            + '<td>' + Utils.sanitize(s.name) + '</td>'
+                            + '<td>' + s.course + '</td>'
+                            + '<td>' + s.semester + '</td>'
+                            + '<td><span class="badge badge-danger">' + att.percentage + '%</span></td>'
+                            + '<td>Shortage</td>'
+                            + '<td>' + needed + ' classes needed</td>'
+                            + '</tr>');
+                    }
+                }
+            });
+
+            document.getElementById('statAvgAtt').textContent =
+                attCount === 0 ? 'N/A' : (totalAtt / attCount).toFixed(1) + '%';
+
+            var alertsBody = document.getElementById('alertsBody');
+            if (alertRows.length === 0) {
+                alertsBody.innerHTML = '';
+                document.getElementById('noAlerts').style.display = 'block';
+            } else {
+                document.getElementById('noAlerts').style.display = 'none';
+                alertsBody.innerHTML = alertRows.join('');
+            }
+
+            /* --- Academic Overview per course --- */
+            var academicBody = document.getElementById('academicBody');
+            var acRows = [];
+
+            for (var code3 in COURSES) {
+                var courseStudents = students.filter(function(s) { return s.course === code3; });
+
+                if (courseStudents.length === 0) {
+                    acRows.push('<tr><td>' + code3 + '</td><td>0</td><td>N/A</td><td>N/A</td><td>—</td></tr>');
+                    continue;
+                }
+
+                var totalMarks = 0, marksCount = 0;
+                var totalAtt2 = 0, attCount2 = 0;
+
+                courseStudents.forEach(function(s) {
+                    var avg = Store.getStudentSemesterAvg(s.id);
+                    if (avg > 0) { totalMarks += avg; marksCount++; }
+                    var att = Store.getStudentAttendance(s.id);
+                    if (att && att.totalLectures > 0) { totalAtt2 += att.percentage; attCount2++; }
+                });
+
+                var avgM = marksCount === 0 ? 0 : parseFloat((totalMarks / marksCount).toFixed(1));
+                var avgA = attCount2 === 0 ? 0 : parseFloat((totalAtt2 / attCount2).toFixed(1));
+                var remark = Performance.getSmartRemark(avgM, avgA);
+                var remarkText = remark.text + (remark.extra ? ' | ' + remark.extra : '');
+
+                acRows.push('<tr>'
+                    + '<td>' + code3 + '</td>'
+                    + '<td>' + courseStudents.length + '</td>'
+                    + '<td>' + (marksCount === 0 ? 'N/A' : '<span class="badge ' + remark.class + '">' + avgM + '%</span>') + '</td>'
+                    + '<td>' + (attCount2 === 0 ? 'N/A' : avgA + '%') + '</td>'
+                    + '<td>' + (marksCount === 0 ? '—' : remarkText) + '</td>'
+                    + '</tr>');
+            }
+            academicBody.innerHTML = acRows.join('');
+        }
+
+        function onDataReady() { loadDashboard(); }
+        loadDashboard();
+    </script>
+
+</body>
+</html>

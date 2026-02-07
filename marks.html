@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marks — AttendTrack</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="app-container">
+        <aside class="sidebar"></aside>
+
+        <main class="main-content">
+            <div class="page-header">
+                <h1>Marks &amp; Performance</h1>
+                <p>Enter subject-wise marks per semester and view AI-generated performance analysis</p>
+            </div>
+
+            <!-- Marks Entry Form -->
+            <div class="card">
+                <div class="card-header">Enter Marks</div>
+                <form id="marksForm">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1; min-width:180px;">
+                            <label for="mkCourse">Course</label>
+                            <select id="mkCourse" onchange="onMarksCourseChange()" required>
+                                <option value="">-- Select Course --</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:0.6; min-width:130px;">
+                            <label for="mkSem">Semester</label>
+                            <select id="mkSem" onchange="onMarksSemChange()" disabled required>
+                                <option value="">—</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1; min-width:180px;">
+                            <label for="mkStudent">Student</label>
+                            <select id="mkStudent" disabled required>
+                                <option value="">—</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" style="margin-top:12px;">
+                        <div class="form-group" style="flex:1; min-width:180px;">
+                            <label for="mkSubject">Subject</label>
+                            <select id="mkSubject" disabled required>
+                                <option value="">—</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:0.4; min-width:100px;">
+                            <label for="mkObtained">Marks Obtained</label>
+                            <input type="number" id="mkObtained" min="0" max="100" placeholder="e.g. 85" required>
+                        </div>
+                        <div class="form-group" style="flex:0.4; min-width:100px;">
+                            <label for="mkMax">Max Marks</label>
+                            <input type="number" id="mkMax" min="1" max="100" value="100" required>
+                        </div>
+                        <button type="submit" class="btn btn-success">Save Marks</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Performance Table -->
+            <div class="card">
+                <div class="card-header">
+                    Performance Overview
+                    <span class="ai-label">AI-Generated Remarks</span>
+                </div>
+                <p class="ai-note">Remarks use rule-based thresholds: &ge;90% Outstanding, &ge;75% Good, &ge;50% Average, &lt;50% Needs Improvement. Cross-metric analysis detects marks vs attendance mismatches.</p>
+
+                <!-- Filter for performance view -->
+                <div class="form-row" style="margin-bottom:14px;">
+                    <div class="form-group" style="flex:0.6; min-width:140px;">
+                        <label for="perfCourse">Filter Course</label>
+                        <select id="perfCourse" onchange="onPerfCourseChange()">
+                            <option value="">All Courses</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:0.5; min-width:120px;">
+                        <label for="perfSem">Filter Semester</label>
+                        <select id="perfSem" onchange="renderPerformance()">
+                            <option value="">All Semesters</option>
+                        </select>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Roll</th>
+                            <th>Name</th>
+                            <th>Course</th>
+                            <th>Sem</th>
+                            <th>Subject</th>
+                            <th>Marks</th>
+                            <th>%</th>
+                            <th>Attendance</th>
+                            <th>AI Remark</th>
+                        </tr>
+                    </thead>
+                    <tbody id="perfBody"></tbody>
+                </table>
+                <p id="noPerf" class="empty-state" style="display:none;">No marks entered yet</p>
+            </div>
+
+            <!-- Semester Average Summary -->
+            <div class="card">
+                <div class="card-header">
+                    Semester Average Summary
+                    <span class="ai-label">AI Analysis</span>
+                </div>
+                <p class="ai-note">Semester average is calculated from all subject marks. Cross-metric smart remarks compare attendance with academic performance.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Roll</th>
+                            <th>Name</th>
+                            <th>Course</th>
+                            <th>Sem</th>
+                            <th>Subjects</th>
+                            <th>Semester Avg</th>
+                            <th>AI Remark</th>
+                        </tr>
+                    </thead>
+                    <tbody id="avgBody"></tbody>
+                </table>
+                <p id="noAvg" class="empty-state" style="display:none;">No marks data available</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/main.js"></script>
+    <script>
+        Auth.guard();
+        renderSidebar('marks');
+
+        /* Initialize all dropdowns */
+        function initMarksPage() {
+            var mkCourse = document.getElementById('mkCourse');
+            var perfCourse = document.getElementById('perfCourse');
+
+            mkCourse.innerHTML = '<option value="">-- Select Course --</option>';
+            perfCourse.innerHTML = '<option value="">All Courses</option>';
+
+            for (var code in COURSES) {
+                mkCourse.innerHTML += '<option value="' + code + '">' + COURSES[code].name + ' (' + code + ')</option>';
+                perfCourse.innerHTML += '<option value="' + code + '">' + code + '</option>';
+            }
+        }
+
+        /* Course change → update semester dropdown */
+        function onMarksCourseChange() {
+            var course = document.getElementById('mkCourse').value;
+            var semSel = document.getElementById('mkSem');
+            var stuSel = document.getElementById('mkStudent');
+            var subSel = document.getElementById('mkSubject');
+
+            if (!course) {
+                semSel.innerHTML = '<option value="">—</option>'; semSel.disabled = true;
+                stuSel.innerHTML = '<option value="">—</option>'; stuSel.disabled = true;
+                subSel.innerHTML = '<option value="">—</option>'; subSel.disabled = true;
+                return;
+            }
+
+            var opts = getSemesterOptions(course);
+            semSel.innerHTML = opts.map(function(o) {
+                return '<option value="' + o.value + '">' + o.label + '</option>';
+            }).join('');
+            semSel.disabled = false;
+            onMarksSemChange();
+        }
+
+        /* Semester change → update student & subject dropdowns */
+        function onMarksSemChange() {
+            var course = document.getElementById('mkCourse').value;
+            var semester = parseInt(document.getElementById('mkSem').value);
+
+            /* Student dropdown */
+            var stuSel = document.getElementById('mkStudent');
+            var students = Store.getStudentsByCourse(course, semester);
+            stuSel.innerHTML = '<option value="">-- Select Student --</option>'
+                + students.map(function(s) {
+                    return '<option value="' + s.id + '">' + Utils.sanitize(s.roll) + ' — ' + Utils.sanitize(s.name) + '</option>';
+                }).join('');
+            stuSel.disabled = false;
+
+            /* Subject dropdown (from curriculum) */
+            var subSel = document.getElementById('mkSubject');
+            var subjects = getSubjects(course, semester);
+            subSel.innerHTML = subjects.map(function(s) {
+                return '<option value="' + s + '">' + s + '</option>';
+            }).join('');
+            subSel.disabled = false;
+        }
+
+        /* Save marks */
+        document.getElementById('marksForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            var studentId = document.getElementById('mkStudent').value;
+            var subject   = document.getElementById('mkSubject').value;
+            var obtained  = document.getElementById('mkObtained').value;
+            var maxMarks  = document.getElementById('mkMax').value;
+
+            var result = Store.updateMarks(studentId, subject, obtained, maxMarks);
+            if (result.success) {
+                Utils.showToast(result.message, 'success');
+                renderPerformance();
+                renderSemesterAvg();
+            } else {
+                Utils.showToast(result.message, 'danger');
+            }
+        });
+
+        /* Performance filter — course change */
+        function onPerfCourseChange() {
+            var course = document.getElementById('perfCourse').value;
+            var perfSem = document.getElementById('perfSem');
+
+            if (!course) {
+                perfSem.innerHTML = '<option value="">All Semesters</option>';
+            } else {
+                var opts = getSemesterOptions(course);
+                perfSem.innerHTML = '<option value="">All Semesters</option>'
+                    + opts.map(function(o) {
+                        return '<option value="' + o.value + '">' + o.label + '</option>';
+                    }).join('');
+            }
+            renderPerformance();
+        }
+
+        /* Render per-subject performance table */
+        function renderPerformance() {
+            var students = Store.getStudents();
+            var filterCourse = document.getElementById('perfCourse').value;
+            var filterSem = document.getElementById('perfSem').value;
+
+            if (filterCourse) students = students.filter(function(s) { return s.course === filterCourse; });
+            if (filterSem) students = students.filter(function(s) { return s.semester === parseInt(filterSem); });
+
+            var tbody = document.getElementById('perfBody');
+            var noMsg = document.getElementById('noPerf');
+
+            var rows = [];
+
+            students.forEach(function(s) {
+                if (!s.marks || Object.keys(s.marks).length === 0) return;
+
+                var att = Store.getStudentAttendance(s.id);
+                var attPct = att ? att.percentage : 0;
+
+                for (var sub in s.marks) {
+                    var m = s.marks[sub];
+                    var pct = m.maxMarks > 0 ? parseFloat(((m.obtained / m.maxMarks) * 100).toFixed(1)) : 0;
+                    var remark = Performance.getSmartRemark(pct, attPct);
+                    var extra = remark.extra
+                        ? '<br><small style="color:#d97706;">' + remark.extra + '</small>'
+                        : '';
+
+                    rows.push('<tr>'
+                        + '<td>' + Utils.sanitize(s.roll) + '</td>'
+                        + '<td>' + Utils.sanitize(s.name) + '</td>'
+                        + '<td>' + s.course + '</td>'
+                        + '<td>' + s.semester + '</td>'
+                        + '<td>' + Utils.sanitize(sub) + '</td>'
+                        + '<td>' + m.obtained + '/' + m.maxMarks + '</td>'
+                        + '<td><span class="badge ' + remark.class + '">' + pct + '%</span></td>'
+                        + '<td>' + (attPct > 0 ? attPct + '%' : 'N/A') + '</td>'
+                        + '<td><span class="badge ' + remark.class + '">' + remark.text + '</span>' + extra + '</td>'
+                        + '</tr>');
+                }
+            });
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '';
+                noMsg.style.display = 'block';
+            } else {
+                noMsg.style.display = 'none';
+                tbody.innerHTML = rows.join('');
+            }
+        }
+
+        /* Render semester average summary */
+        function renderSemesterAvg() {
+            var students = Store.getStudents();
+            var tbody = document.getElementById('avgBody');
+            var noMsg = document.getElementById('noAvg');
+
+            var rows = [];
+            students.forEach(function(s) {
+                var avg = Store.getStudentSemesterAvg(s.id);
+                if (avg === 0) return;
+
+                var subCount = Object.keys(s.marks || {}).length;
+                var remark = Performance.getRemark(avg);
+                var att = Store.getStudentAttendance(s.id);
+                var smart = Performance.getSmartRemark(avg, att ? att.percentage : 0);
+                var extra = smart.extra ? ' | ' + smart.extra : '';
+
+                rows.push('<tr>'
+                    + '<td>' + Utils.sanitize(s.roll) + '</td>'
+                    + '<td>' + Utils.sanitize(s.name) + '</td>'
+                    + '<td>' + s.course + '</td>'
+                    + '<td>' + s.semester + '</td>'
+                    + '<td>' + subCount + ' subjects</td>'
+                    + '<td><span class="badge ' + remark.class + '">' + avg + '%</span></td>'
+                    + '<td>' + remark.text + extra + '</td>'
+                    + '</tr>');
+            });
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '';
+                noMsg.style.display = 'block';
+            } else {
+                noMsg.style.display = 'none';
+                tbody.innerHTML = rows.join('');
+            }
+        }
+
+        function onDataReady() { initMarksPage(); renderPerformance(); renderSemesterAvg(); }
+        initMarksPage();
+        renderPerformance();
+        renderSemesterAvg();
+    </script>
+
+</body>
+</html>
